@@ -1,7 +1,7 @@
 # DADA1: Trip Planner Agent
 
 ```
-Deployed app: <your Render URL>
+Deployed app: https://dada1-wayfarer-planner.onrender.com
 ```
 
 The app runs on Render's free tier and sleeps when idle, so the first request can take about 30 seconds.
