@@ -6,6 +6,7 @@ python-dotenv>=1.0
 pydantic>=2.8
 requests>=2.32
 gradio>=5
+tzdata>=2024.1   # ZoneInfo("America/New_York") on hosts without a system tz database
 
 # Alternative model vendors - only needed if you swap the model in agent/agent.py
 langchain-openrouter>=0.2
