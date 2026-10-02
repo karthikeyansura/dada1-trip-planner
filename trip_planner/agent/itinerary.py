@@ -30,7 +30,9 @@ class Activity(BaseModel):
 
 class DayPlan(BaseModel):
     """One day of the trip."""
-    date: str = Field(description="The day as YYYY-MM-DD, or 'unknown' if the conversation never fixed one")
+    date: str = Field(
+        description="The day as YYYY-MM-DD: from the plan, or else from the get_weather or "
+                    "find_events result for that day. 'unknown' only if no message gives a date")
     weather: str = Field(
         description="What get_weather reported for this day, e.g. 'overcast, high 71°F, "
                     "9% chance of rain (Open-Meteo)', or 'no forecast available'")
@@ -63,9 +65,13 @@ Use only what the transcript states:
   'free' only if a Tool message says that item is free, e.g. it offers free admission.
   Otherwise 'unknown'. Never 0.
 - source: the URL given for that item; 'none' if there is no URL.
+- date: the date the plan states for that day. If the plan does not state a date, use
+  the date in the get_weather or find_events Tool message for that day. Use 'unknown'
+  only if no message gives a date.
 - unknowns: one entry per item, e.g. 'Opening hours for Boston Public Library',
   'Price for Porter Exchange'. Cover every opening hour and price in the plan that the
   tools did not confirm, plus any journey time or forecast the plan lacks.
+  Do not list a price for an item whose cost is 'free' or a stated price.
 
 Transcript:
 
