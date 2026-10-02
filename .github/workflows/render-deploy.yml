@@ -1,0 +1,79 @@
+# Shows the Render deploy result of a commit as a check on GitHub.
+# Render deploys the commit itself (Auto-Deploy: On Commit). This workflow only waits for the result.
+name: Render deploy
+
+on:
+  push:
+    branches: [main]
+    paths: ["trip_planner/**"]   # Render deploys only for changes in its Root Directory
+  workflow_dispatch:             # Run manually from the Actions tab for the latest commit
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render-deploy
+  cancel-in-progress: true       # A newer push replaces the older wait
+
+jobs:
+  live:
+    name: Wait for live deploy
+    # Render does not deploy a commit with a skip phrase in its message
+    if: >-
+      github.event_name == 'workflow_dispatch' || !(
+      contains(github.event.head_commit.message, '[skip render]') ||
+      contains(github.event.head_commit.message, '[render skip]') ||
+      contains(github.event.head_commit.message, '[skip deploy]') ||
+      contains(github.event.head_commit.message, '[deploy skip]') ||
+      contains(github.event.head_commit.message, '[skip cd]') ||
+      contains(github.event.head_commit.message, '[cd skip]'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Wait until Render reports the deploy of this commit
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          SHA: ${{ github.sha }}
+          POLL_SECONDS: 20
+          MAX_POLLS: 45
+        run: |
+          set -euo pipefail
+          if [ -z "$RENDER_API_KEY" ] || [ -z "$SERVICE_ID" ]; then
+            echo "::error::Set the RENDER_API_KEY and RENDER_SERVICE_ID repository secrets."
+            exit 1
+          fi
+
+          for poll in $(seq 1 "$MAX_POLLS"); do
+            code=$(curl -sS -o deploys.json -w "%{http_code}" \
+              -H "Authorization: Bearer $RENDER_API_KEY" -H "Accept: application/json" \
+              "https://api.render.com/v1/services/$SERVICE_ID/deploys?limit=20") || code=000
+            if [ "$code" != "200" ]; then
+              echo "Poll $poll: Render API returned HTTP $code."
+              [ "$code" = "401" ] && { echo "::error::Render rejected the API key (HTTP 401)."; exit 1; }
+              sleep "$POLL_SECONDS"; continue
+            fi
+
+            # Each list item holds the deploy under "deploy"
+            status=$(jq -r --arg sha "$SHA" \
+              '[.[] | (.deploy // .) | select(.commit.id == $sha)][0].status // "not found"' deploys.json)
+            echo "Poll $poll: deploy of ${SHA:0:7} is $status."
+
+            case "$status" in
+              live)
+                echo "### Render deploy: live for \`${SHA:0:7}\`" >> "$GITHUB_STEP_SUMMARY"
+                exit 0 ;;
+              deactivated)
+                echo "::notice::The deploy was live, then a newer deploy replaced it."
+                echo "### Render deploy: replaced by a newer deploy" >> "$GITHUB_STEP_SUMMARY"
+                exit 0 ;;
+              build_failed|update_failed|pre_deploy_failed|canceled)
+                echo "::error::Render deploy of ${SHA:0:7} ended with status $status."
+                echo "### Render deploy: $status for \`${SHA:0:7}\`" >> "$GITHUB_STEP_SUMMARY"
+                exit 1 ;;
+            esac
+            sleep "$POLL_SECONDS"
+          done
+
+          echo "::error::No live deploy of ${SHA:0:7} after $((MAX_POLLS * POLL_SECONDS)) seconds."
+          exit 1
