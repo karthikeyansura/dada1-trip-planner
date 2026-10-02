@@ -15,7 +15,7 @@ logging.getLogger("google_genai.models").setLevel(logging.ERROR)
 
 # Fail fast and legibly: a placeholder left over from example.env otherwise
 # surfaces as a 400 INVALID_ARGUMENT deep inside the first model call.
-for _name in ("GOOGLE_API_KEY", "TAVILY_API_KEY"):
+for _name in ("GOOGLE_API_KEY", "TAVILY_API_KEY", "TICKETMASTER_API_KEY"):
     if os.getenv(_name, "").startswith("your_"):
         raise SystemExit(
             f"{_name} in your .env is still the placeholder from example.env. "
