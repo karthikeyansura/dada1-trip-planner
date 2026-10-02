@@ -49,7 +49,7 @@ WEATHER_CODES = {
 
 
 def _search(query: str) -> str:
-    """Run one web search and format the hits. Shared by the four find_* tools."""
+    """Run one web search and format the hits. Used by find_attractions, find_restaurants and get_transit_info."""
     try:
         results = TavilySearch(max_results=MAX_RESULTS).invoke({"query": query})
     except Exception as e:
@@ -76,7 +76,7 @@ def _search(query: str) -> str:
 
 def _with_note(results: str, note: str) -> str:
     """Append a caveat to search hits; failed or empty searches pass through unchanged."""
-    return results + note if results.startswith("1. ") else results
+    return results + note if results.startswith(("1. ", "Free admission results:")) else results
 
 
 def _geocode(city: str) -> tuple[str, float, float, str]:
@@ -262,7 +262,9 @@ def get_weather(city: str, date: str = "") -> str:
 
     sky = WEATHER_CODES.get(code, f"code {code}")
     chance = f"{rain}% chance of rain" if rain is not None else "chance of rain unknown"
-    return f"{label}, {day}: {sky}, high {hi:.0f}°F, low {lo:.0f}°F, {chance}.{note}"
+    # With no date asked, give the window so later dates are not guessed
+    span = "" if date.strip() else f" Forecasts exist only for {window}."
+    return f"{label}, {day}: {sky}, high {hi:.0f}°F, low {lo:.0f}°F, {chance}.{span}{note}"
 
 
 @tool
@@ -270,13 +272,21 @@ def find_attractions(city: str, interest: str = "") -> str:
     """Find sights, museums, parks and landmarks in a city.
 
     interest narrows it, e.g. "art", "history", "outdoors", "free",
-    "rainy day indoor". Use this for things to SEE. For food use
+    "rainy day indoor". When interest has "free" and other words, the result
+    also has a "Free admission results" part. Use this for things to SEE. For food use
     find_restaurants; for things happening on a particular date use find_events.
     It does not return opening hours: never state hours, even if a snippet
     shows them.
     """
-    note = HOURS_NOTE + (FREE_NOTE if re.search(r"\bfree\b", interest, re.I) else "")
-    return _with_note(_search(" ".join(f"{interest} things to see in {city}".split())), note)
+    free = re.search(r"\bfree\b", interest, re.I)
+    found = _search(" ".join(f"{interest} things to see in {city}".split()))
+    # A long query with "free" returns paid lists, so free admission is also searched alone
+    rest = " ".join(w for w in interest.split() if w.lower() not in {"free", "rainy", "rain", "day"})
+    if free and interest.strip().lower() != "free":
+        extra = _search(" ".join(f"free admission {rest} attractions in {city}".split()))
+        if extra.startswith("1. "):
+            found = (found + "\n\n" if found.startswith("1. ") else "") + "Free admission results:\n" + extra
+    return _with_note(found, HOURS_NOTE + (FREE_NOTE if free else ""))
 
 
 @tool
@@ -463,8 +473,9 @@ def find_performer_events(performer: str, city: str, date: str = "") -> str:
                 return (f"'{name}' is ambiguous: several Ticketmaster acts match, and {len(playing)} of the "
                         f"{len(top)} checked have events in {place} {when}{scope}.{note}\n"
                         + "\n".join(f"- {_act(a)}, {here_count(a)} [id {a['id']}]" for a in top)
-                        + more + "\nAsk the user which one they mean (you may say which seems likely). Then "
-                        "call again with its name and [id …] exactly as listed. Do not pick one yourself.")
+                        + more + "\nAsk the user which one they mean (you may say which seems likely). "
+                        "Do not show the [id …] values to the user; keep them for your follow-up call. "
+                        "Then call again with its name and [id …] exactly as listed. Do not pick one yourself.")
 
         # Some events are listed under the name without being linked to the act
         named_total, named = _events({**params, "size": 200, "keyword": act["name"]})
